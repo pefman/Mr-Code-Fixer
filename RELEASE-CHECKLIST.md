@@ -55,9 +55,19 @@ See CHANGELOG.md for full details"
 git push origin v1.2.0
 ```
 
-### 4. Build Release Artifacts
+### 4. Run GoReleaser
 ```bash
-# GoReleaser will auto-build on tag push if CI is set up
+# Build and publish release artifacts
+goreleaser release --clean
+
+# This will:
+# - Build binaries for all platforms (Windows, Linux, macOS)
+# - Create GitHub release
+# - Upload all artifacts
+# - Generate checksums
+```
+
+### 5. Verify Release
 # Or manually:
 goreleaser release --clean
 ```
