@@ -467,10 +467,12 @@ func processIssue(config Config, ghClient *GitHubClient, aiClient AIClient, issu
 	}
 
 	// Read relevant files from the repository
-	repoContext, err := gitOps.GetRepoContext()
+	repoContext, err := gitOps.GetRepoContext(issue.Title, issue.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read repo context: %w", err)
 	}
+	
+	fmt.Printf("Analyzed %d relevant files from repository\n", repoContext.FileCount)
 
 	// Ask AI to analyze and fix the issue
 	fmt.Println("Analyzing issue with AI...")

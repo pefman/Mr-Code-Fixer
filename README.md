@@ -223,14 +223,107 @@ goreleaser release --clean
 - **No testing**: The bot cannot run tests (yet) - always review PRs before merging
 - **API limits**: Respects GitHub API rate limits (5000 requests/hour for authenticated)
 - **Cost awareness**: ChatGPT and Grok are paid services - monitor your usage
+- **File limit**: Analyzes up to 30 most relevant files per issue to keep AI context manageable
+
+## Writing Issues the Bot Understands
+
+The bot works best with well-written issues. Here are examples:
+
+### ✅ Perfect Issue Example
+
+```markdown
+Title: Login button not working in src/components/Auth/LoginForm.tsx
+
+Description:
+The login button on the login page doesn't submit the form when clicked.
+
+File: src/components/Auth/LoginForm.tsx
+Line: Around line 45
+
+Expected: Clicking "Login" should call handleSubmit() and send credentials to API
+Actual: Nothing happens when clicking the button
+
+Error in console:
+TypeError: Cannot read property 'submit' of undefined
+```
+
+**Why this works:**
+- ✅ Mentions exact file path: `src/components/Auth/LoginForm.tsx`
+- ✅ Describes expected vs actual behavior
+- ✅ Includes error message
+- ✅ Specifies approximate location (line 45)
+
+### ✅ Good Issue Example
+
+```markdown
+Title: Database connection failing in api/db.go
+
+The app crashes on startup with "connection refused" error.
+I think the issue is in api/db.go where we initialize the database pool.
+```
+
+**Why this works:**
+- ✅ Mentions file: `api/db.go`
+- ✅ Clear error description
+- ✅ Hints at the problem area
+
+### ⚠️ Okay Issue Example
+
+```markdown
+Title: Typo in documentation
+
+README.md has wrong command - it says `npm start` but should be `npm run dev`
+```
+
+**Why this works:**
+- ✅ Mentions file: `README.md`
+- ✅ Clear what needs to change
+- ⚠️ Simple fix, bot will handle confidently
+
+### ❌ Poor Issue Example
+
+```markdown
+Title: App doesn't work
+
+Something is broken. Please fix it.
+```
+
+**Why this fails:**
+- ❌ No file mentioned
+- ❌ No error description
+- ❌ No context about what "doesn't work" means
+- **Bot response:** Will ask clarifying questions in the issue
+
+### Best Practices for Issues
+
+1. **Mention files explicitly**: Use backticks for file paths: `src/utils/helper.js`
+2. **Include error messages**: Copy-paste actual errors from console/logs
+3. **Describe expected behavior**: What should happen vs what actually happens
+4. **Add context**: Environment, steps to reproduce, related files
+5. **Use keywords**: Words like "login", "database", "api" help the bot find relevant files
+
+### How the Bot Finds Files
+
+The bot uses smart file selection:
+- **Explicit mentions**: Files mentioned in the issue get highest priority
+- **Keyword matching**: Finds files with issue keywords in their path
+- **Relevance scoring**: Ranks files by how likely they are related
+- **Limit**: Analyzes top 30 most relevant files (not entire codebase)
+
+**Example:** Issue mentions "login problem" → Bot prioritizes:
+1. Files explicitly mentioned: `auth/login.js`
+2. Files with "login" in path: `components/LoginForm.tsx`, `services/loginService.js`
+3. Files with "auth" in path: `middleware/auth.js`
+4. Common entry points: `index.js`, `main.go`, `app.py`
 
 ## Tips for Best Results
 
-1. **Write clear issues**: The better the issue description, the better the fix
+1. **Write clear issues**: Mention file paths and include error messages
 2. **Start with simple issues**: Test the bot on documentation or simple bugs first
 3. **Review PRs carefully**: Always review before merging, especially for critical code
 4. **Use labels**: Consider only letting the bot handle issues labeled "auto-fix" or "good-first-issue"
 5. **Monitor costs**: If using paid AI services, track your API usage
+6. **One issue per problem**: Don't bundle multiple unrelated problems in one issue
 
 ## Contributing
 
