@@ -3,7 +3,9 @@ workspace/
 
 # Secrets
 .env
+.env.json
 .token
+.mr-code-fixer.json
 
 # Binary output
 mr-code-fixer

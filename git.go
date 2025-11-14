@@ -9,17 +9,19 @@ import (
 )
 
 type GitOps struct {
-	workDir   string
-	repoPath  string
-	owner     string
-	repo      string
-	token     string
+	workDir       string
+	repoPath      string
+	owner         string
+	repo          string
+	token         string
+	DefaultBranch string
 }
 
 func NewGitOps(workDir, owner, repo, token string) (*GitOps, error) {
-	repoPath := filepath.Join(workDir, repo)
+	// Create a unique directory path for this repo
+	repoPath := filepath.Join(workDir, owner, repo)
 	
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(repoPath), 0755); err != nil {
 		return nil, fmt.Errorf("failed to create work directory: %w", err)
 	}
 
@@ -54,6 +56,23 @@ func (g *GitOps) Clone() error {
 	// Configure git user for commits
 	g.runGitCommand("config", "user.name", "Mr. Code Fixer")
 	g.runGitCommand("config", "user.email", "code-fixer@automated.bot")
+
+	// Detect default branch
+	cmd = exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
+	cmd.Dir = g.repoPath
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		// Output format: refs/remotes/origin/branch-name
+		branch := strings.TrimSpace(string(output))
+		parts := strings.Split(branch, "/")
+		if len(parts) > 0 {
+			g.DefaultBranch = parts[len(parts)-1]
+		}
+	}
+	if g.DefaultBranch == "" {
+		// Fallback to main
+		g.DefaultBranch = "main"
+	}
 
 	return nil
 }

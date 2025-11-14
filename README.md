@@ -1,228 +1,255 @@
 # Mr. Code Fixer 🤖
 
-An automated CLI tool that uses AI to fix GitHub issues and create pull requests automatically. Perfect for automating simple bug fixes and maintenance tasks.
+An AI-powered GitHub bot that automatically analyzes and fixes issues in your repositories. Download, configure, and let it run autonomously to maintain your projects.
 
-## Features
+## What Does It Do?
 
-- 🔍 Fetches open issues from GitHub repositories
-- 🤖 Uses free AI services (Groq or Ollama) to analyze and fix issues
-- 🔧 Automatically creates branches, commits, and pull requests
-- 🚀 Easy to automate with simple CLI flags
-- 💰 Uses free AI APIs (no expensive API costs!)
+Mr. Code Fixer is an autonomous bot that:
+- 🔍 Monitors your GitHub repositories for open issues
+- 🧠 Uses AI to understand what needs to be fixed
+- 💡 Asks clarifying questions when uncertain
+- ✏️ Creates fixes and opens pull requests
+- ✅ Closes issues when confident about the solution
 
-## Prerequisites
+Think of it as a tireless contributor that works 24/7 to help maintain your codebase.
 
-- Go 1.21 or higher
-- Git installed and configured
-- GitHub personal access token with `repo` permissions
-- Groq API key (free tier: https://console.groq.com) OR Ollama installed locally
+## Quick Start
 
-## Installation
+### 1. Download
 
-### Option 1: Build from source
+Get the latest release for your platform from the [releases page](https://github.com/pefman/Mr-Code-Fixer/releases):
+- `mr-code-fixer_Windows_x86_64.zip` - Windows
+- `mr-code-fixer_Linux_x86_64.tar.gz` - Linux (Intel/AMD)
+- `mr-code-fixer_Linux_arm64.tar.gz` - Linux (ARM)
+- `mr-code-fixer_Darwin_x86_64.tar.gz` - macOS (Intel)
+- `mr-code-fixer_Darwin_arm64.tar.gz` - macOS (Apple Silicon)
 
-```bash
-git clone https://github.com/pefman/mr-code-fixer.git
-cd mr-code-fixer
-go build -o mr-code-fixer
-```
+### 2. Setup
 
-### Option 2: Install directly
-
-```bash
-go install github.com/pefman/mr-code-fixer@latest
-```
-
-## Setup
-
-### 1. Get a GitHub Token
-
-1. Go to https://github.com/settings/tokens
-2. Click "Generate new token (classic)"
-3. Select scope: `repo` (Full control of private repositories)
-4. Copy the token
-
-### 2. Get a Groq API Key (Free!)
-
-1. Go to https://console.groq.com
-2. Sign up for a free account
-3. Navigate to API Keys
-4. Create a new API key
-
-### 3. Set Environment Variables
+Run the bot for the first time:
 
 ```bash
-# Windows PowerShell
-$env:GITHUB_TOKEN="your_github_token"
-$env:GROQ_API_KEY="your_groq_api_key"
-
-# Linux/Mac
-export GITHUB_TOKEN="your_github_token"
-export GROQ_API_KEY="your_groq_api_key"
+./mr-code-fixer
 ```
 
-## Usage
+It will guide you through interactive setup:
+- **GitHub Repository**: Which repo should the bot help fix?
+- **GitHub Token**: Your personal access token (see below)
+- **AI Service**: Choose ChatGPT, Grok, or local Ollama
+- **Working Directory**: Where to clone repos (defaults to `~/.mr-code-fixer/workspace`)
 
-### Basic Usage
+Configuration is saved in `~/.mr-code-fixer.json` for future runs.
 
-Fix all open issues (up to max-issues):
+### 3. Run
 
+The bot will:
+1. Show all open issues
+2. Let you select which one to fix
+3. Analyze the issue with AI
+4. Either ask questions (if uncertain) or create a PR (if confident)
+
+## Use Cases
+
+### Personal Projects
+Run manually whenever you want help with issues:
 ```bash
-./mr-code-fixer -owner username -repo repository-name
+./mr-code-fixer
 ```
 
-### Fix a Specific Issue
+### Automation
+Set up the bot to run periodically:
 
-```bash
-./mr-code-fixer -owner username -repo repository-name -issue 42
-```
-
-### Using Ollama (Local AI)
-
-```bash
-# Make sure Ollama is running: ollama serve
-# Pull a model: ollama pull llama2
-
-./mr-code-fixer -owner username -repo repository-name \
-  -ai-service ollama \
-  -ai-model llama2
-```
-
-### All CLI Options
-
-```bash
-./mr-code-fixer [flags]
-
-Flags:
-  -owner string
-        GitHub repository owner (required)
-  -repo string
-        GitHub repository name (required)
-  -github-token string
-        GitHub personal access token (default: $GITHUB_TOKEN)
-  -ai-service string
-        AI service to use: groq or ollama (default "groq")
-  -ai-key string
-        API key for AI service (default: $GROQ_API_KEY)
-  -ai-model string
-        AI model to use (default "llama-3.3-70b-versatile")
-  -ollama-url string
-        Ollama API URL (default "http://localhost:11434")
-  -issue int
-        Specific issue number to fix (0 = all open issues) (default 0)
-  -max-issues int
-        Maximum number of issues to process (default 1)
-  -work-dir string
-        Working directory for cloning repos (default "./workspace")
-```
-
-## Examples
-
-### Fix Issue #15 in your own repo
-
-```bash
-./mr-code-fixer -owner pefman -repo my-project -issue 15
-```
-
-### Process up to 5 issues at once
-
-```bash
-./mr-code-fixer -owner pefman -repo my-project -max-issues 5
-```
-
-### Use with different AI model
-
-```bash
-./mr-code-fixer -owner pefman -repo my-project \
-  -ai-model llama-3.1-70b-versatile
-```
-
-### Automate with a script
-
+**Windows (Task Scheduler):**
 ```powershell
-# Windows PowerShell - process-issues.ps1
-$repos = @("repo1", "repo2", "repo3")
+# Run every 6 hours
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 6)
+$action = New-ScheduledTaskAction -Execute "C:\path\to\mr-code-fixer.exe"
+Register-ScheduledTask -TaskName "Mr Code Fixer" -Trigger $trigger -Action $action
+```
 
-foreach ($repo in $repos) {
-    Write-Host "Processing $repo..."
-    ./mr-code-fixer -owner pefman -repo $repo -max-issues 3
+**Linux/macOS (cron):**
+```bash
+# Add to crontab (runs every 6 hours)
+0 */6 * * * cd /path/to && ./mr-code-fixer
+```
+
+**Docker:**
+```dockerfile
+FROM golang:1.21-alpine
+WORKDIR /app
+COPY . .
+RUN go build -o mr-code-fixer
+CMD ["./mr-code-fixer"]
+```
+
+### Dedicated Bot Account
+For a true "bot experience":
+
+1. Create a new GitHub account (e.g., `my-code-fixer-bot`)
+2. Set up a nice bot profile (avatar, bio: "🤖 Automated code fixer")
+3. Generate a PAT from the bot account
+4. Invite the bot as a collaborator to your repos
+5. Run Mr. Code Fixer with the bot's token
+
+Now all PRs and comments will appear from the bot account!
+
+## Configuration
+
+### GitHub Personal Access Token
+
+Create a token at https://github.com/settings/tokens with these permissions:
+
+**Fine-grained token (recommended):**
+- Repository access: Select repositories you want the bot to help with
+- Permissions:
+  - Contents: Read and write
+  - Issues: Read and write
+  - Pull requests: Read and write
+  - Metadata: Read-only
+
+**Classic token:**
+- `repo` (full control)
+
+### AI Services
+
+Choose one of three AI providers:
+
+#### 1. ChatGPT (OpenAI)
+- **Get API Key**: https://platform.openai.com/api-keys
+- **Models**: gpt-4o, gpt-4-turbo, gpt-3.5-turbo
+- **Cost**: Pay-per-use (check OpenAI pricing)
+
+#### 2. Grok (xAI)
+- **Get API Key**: https://x.ai
+- **Models**: grok-3, grok-4-fast-reasoning, grok-code-fast-1
+- **Cost**: Pay-per-use (check xAI pricing)
+
+#### 3. Ollama (Local)
+- **Install**: https://ollama.ai
+- **Models**: llama2, codellama, deepseek-coder (free, runs on your machine)
+- **Cost**: Free, but uses your compute resources
+- **Setup**: `ollama pull codellama` then select in the bot
+
+## How The Bot Thinks
+
+### Confidence-Based Decisions
+
+The bot assesses its confidence before acting:
+
+**High Confidence** ✅
+- Creates PR with the fix
+- Adds comment to issue
+- Automatically closes the issue
+
+**Medium/Low Confidence** ⚠️
+- Creates PR with warnings
+- Leaves issue open for human review
+
+**Needs More Info** ❓
+- Posts questions as issue comments
+- Waits for human clarification
+- Does NOT create a PR
+
+### Branch Naming
+
+The bot creates descriptive branches:
+- `fix/1-app-crashes-on-startup`
+- `fix/23-typo-in-documentation`
+- `fix/5-where-is-documentation`
+
+### Example Workflow
+
+```
+Issue #5: "App crashes on startup"
+  ↓
+Bot analyzes code + issue description
+  ↓
+High confidence? 
+  ├─ Yes → Creates fix, opens PR, closes issue
+  └─ No → Posts: "Could you provide the error logs?"
+```
+
+## Advanced Usage
+
+### Configuration File
+
+The bot saves settings in `~/.mr-code-fixer.json`. You can edit this directly:
+
+```json
+{
+  "github_token": "ghp_xxxxx",
+  "repo_owner": "yourusername",
+  "repo_name": "yourrepo",
+  "ai_service": "grok",
+  "ai_api_key": "xai-xxxxx",
+  "ai_model": "grok-code-fast-1",
+  "work_dir": "/home/user/.mr-code-fixer/workspace"
 }
 ```
 
+### Multiple Repositories
+
+To use the bot with multiple repos, either:
+- Run it interactively and change the repo each time
+- Create separate config files and use: `./mr-code-fixer --config /path/to/config.json`
+- Set up separate bot instances with different working directories
+
+## Building From Source
+
+### Requirements
+- Go 1.21 or higher
+- Git
+
+### Build
+
 ```bash
-# Linux/Mac - process-issues.sh
-#!/bin/bash
-for repo in repo1 repo2 repo3; do
-    echo "Processing $repo..."
-    ./mr-code-fixer -owner username -repo $repo -max-issues 3
-done
+git clone https://github.com/pefman/Mr-Code-Fixer.git
+cd Mr-Code-Fixer
+go build -o mr-code-fixer
 ```
 
-## How It Works
+### Create Release
 
-1. **Fetch Issues**: Retrieves open issues from the specified GitHub repository
-2. **Clone Repo**: Clones the repository to a local workspace
-3. **Analyze**: Sends issue details and repo context to AI for analysis
-4. **Apply Fix**: AI suggests code changes, which are applied to the local repo
-5. **Create PR**: Creates a new branch, commits changes, and opens a pull request
+```bash
+git tag -a v0.2.0 -m "Release v0.2.0"
+git push origin v0.2.0
+goreleaser release --clean
+```
 
-## AI Services
+## Limitations & Considerations
 
-### Groq (Recommended for Cloud)
-
-- **Free tier**: 14,400 requests/day
-- **Fast**: Optimized for speed
-- **Models**: Llama 3.3 70B, Mixtral, Gemma, etc.
-- **Sign up**: https://console.groq.com
-
-### Ollama (Recommended for Local/Privacy)
-
-- **Completely free**: Runs locally on your machine
-- **Private**: No data leaves your computer
-- **Models**: Llama 2, Llama 3, CodeLlama, Mistral, etc.
-- **Install**: https://ollama.com
-
-## Limitations
-
-- Best suited for simple to medium complexity issues
-- AI may not always produce perfect fixes (review PRs before merging!)
-- Large repositories may take time to process
-- Requires clear issue descriptions for best results
+- **Quality depends on AI**: The bot is only as good as the AI model you choose
+- **Complex issues**: May require human intervention or clarification
+- **No testing**: The bot cannot run tests (yet) - always review PRs before merging
+- **API limits**: Respects GitHub API rate limits (5000 requests/hour for authenticated)
+- **Cost awareness**: ChatGPT and Grok are paid services - monitor your usage
 
 ## Tips for Best Results
 
-1. **Clear Issue Descriptions**: Write detailed issues with steps to reproduce
-2. **Start Small**: Test with simple issues first
-3. **Review PRs**: Always review generated pull requests before merging
-4. **Good Repo Structure**: Well-organized code helps AI understand context
-5. **Include Tests**: Mention test files in issues for AI to reference
-
-## Troubleshooting
-
-### "GitHub token required"
-Set the `GITHUB_TOKEN` environment variable or use the `-github-token` flag.
-
-### "Groq API key required"
-Set the `GROQ_API_KEY` environment variable or use the `-ai-key` flag.
-
-### "git clone failed"
-Ensure Git is installed and you have permission to access the repository.
-
-### "failed to parse AI response"
-The AI output was malformed. Try running again or use a different model.
+1. **Write clear issues**: The better the issue description, the better the fix
+2. **Start with simple issues**: Test the bot on documentation or simple bugs first
+3. **Review PRs carefully**: Always review before merging, especially for critical code
+4. **Use labels**: Consider only letting the bot handle issues labeled "auto-fix" or "good-first-issue"
+5. **Monitor costs**: If using paid AI services, track your API usage
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome! Areas for improvement:
+- Add automated testing before creating PRs
+- Implement GitHub App for easier installation
+- Add webhook listener for real-time responses
+- Support for more AI providers
+- Better code context understanding
+- Issue priority/labeling system
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License - See LICENSE file for details.
 
-## Author
+## Credits
 
-Created by pefman
+Built with Go and AI. Zero external dependencies beyond the standard library.
 
 ---
 
-**Note**: This tool is experimental. Always review generated pull requests before merging. The AI may not always produce correct solutions.
+**Need help?** Open an issue or check existing issues for common problems and solutions.

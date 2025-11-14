@@ -14,52 +14,82 @@ type AIClient interface {
 	AnalyzeAndFix(issue Issue, context *RepoContext) (*Fix, error)
 }
 
-type Fix struct {
-	FileChanges []FileChange
-	Explanation string
+type AIService interface {
+	GetAvailableModels() ([]string, error)
 }
 
-// Groq Client (Free tier available: https://console.groq.com)
-type GroqClient struct {
+type Fix struct {
+	FileChanges    []FileChange
+	Explanation    string
+	Confidence     string // "high", "medium", "low"
+	NeedsMoreInfo  bool
+	Questions      []string
+}
+
+// OpenAI/ChatGPT Client
+type OpenAIClient struct {
 	apiKey  string
 	model   string
 	baseURL string
 	client  *http.Client
 }
 
-func NewGroqClient(apiKey, model string) *GroqClient {
-	return &GroqClient{
+func NewOpenAIClient(apiKey, model string) *OpenAIClient {
+	if model == "" {
+		model = "gpt-4o"
+	}
+	return &OpenAIClient{
 		apiKey:  apiKey,
 		model:   model,
-		baseURL: "https://api.groq.com/openai/v1",
+		baseURL: "https://api.openai.com/v1",
 		client:  &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
-type GroqRequest struct {
-	Model    string          `json:"model"`
-	Messages []GroqMessage   `json:"messages"`
-	Temperature float64      `json:"temperature"`
-	MaxTokens   int          `json:"max_tokens,omitempty"`
+// xAI Client (Grok models)
+type XAIClient struct {
+	apiKey  string
+	model   string
+	baseURL string
+	client  *http.Client
 }
 
-type GroqMessage struct {
+func NewXAIClient(apiKey, model string) *XAIClient {
+	if model == "" {
+		model = "grok-beta"
+	}
+	return &XAIClient{
+		apiKey:  apiKey,
+		model:   model,
+		baseURL: "https://api.x.ai/v1",
+		client:  &http.Client{Timeout: 120 * time.Second},
+	}
+}
+
+type OpenAIRequest struct {
+	Model       string          `json:"model"`
+	Messages    []OpenAIMessage `json:"messages"`
+	Temperature float64         `json:"temperature"`
+	MaxTokens   int             `json:"max_tokens,omitempty"`
+}
+
+type OpenAIMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type GroqResponse struct {
+type OpenAIResponse struct {
 	Choices []struct {
-		Message GroqMessage `json:"message"`
+		Message OpenAIMessage `json:"message"`
 	} `json:"choices"`
 }
 
-func (g *GroqClient) AnalyzeAndFix(issue Issue, context *RepoContext) (*Fix, error) {
-	prompt := g.buildPrompt(issue, context)
+func (o *OpenAIClient) AnalyzeAndFix(issue Issue, context *RepoContext) (*Fix, error) {
+	prompt := o.buildPrompt(issue, context)
 
-	reqBody := GroqRequest{
-		Model: g.model,
-		Messages: []GroqMessage{
+	reqBody := OpenAIRequest{
+		Model: o.model,
+		Messages: []OpenAIMessage{
 			{
 				Role:    "system",
 				Content: "You are an expert software developer. Analyze issues and provide fixes in a structured JSON format.",
@@ -78,15 +108,15 @@ func (g *GroqClient) AnalyzeAndFix(issue Issue, context *RepoContext) (*Fix, err
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", g.baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", o.baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+g.apiKey)
+	req.Header.Set("Authorization", "Bearer "+o.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := g.client.Do(req)
+	resp, err := o.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -94,22 +124,22 @@ func (g *GroqClient) AnalyzeAndFix(issue Issue, context *RepoContext) (*Fix, err
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Groq API error: %s - %s", resp.Status, string(body))
+		return nil, fmt.Errorf("OpenAI API error: %s - %s", resp.Status, string(body))
 	}
 
-	var groqResp GroqResponse
-	if err := json.NewDecoder(resp.Body).Decode(&groqResp); err != nil {
+	var openaiResp OpenAIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&openaiResp); err != nil {
 		return nil, err
 	}
 
-	if len(groqResp.Choices) == 0 {
+	if len(openaiResp.Choices) == 0 {
 		return nil, fmt.Errorf("no response from AI")
 	}
 
-	return g.parseFix(groqResp.Choices[0].Message.Content)
+	return o.parseFix(openaiResp.Choices[0].Message.Content)
 }
 
-func (g *GroqClient) buildPrompt(issue Issue, context *RepoContext) string {
+func (o *OpenAIClient) buildPrompt(issue Issue, context *RepoContext) string {
 	var prompt strings.Builder
 
 	prompt.WriteString(fmt.Sprintf("# Issue to Fix\n\n"))
@@ -137,6 +167,9 @@ func (g *GroqClient) buildPrompt(issue Issue, context *RepoContext) string {
 Analyze the issue and provide a fix. Your response MUST be in the following JSON format:
 
 {
+  "confidence": "high|medium|low",
+  "needs_more_info": false,
+  "questions": [],
   "explanation": "Brief explanation of what the fix does",
   "files": [
     {
@@ -146,7 +179,9 @@ Analyze the issue and provide a fix. Your response MUST be in the following JSON
   ]
 }
 
-Rules:
+Instructions:
+- If you're CONFIDENT you understand the issue and can fix it, set confidence to "high" and provide the fix
+- If you need more information, set "needs_more_info" to true and list specific "questions" to ask in the issue
 - Provide COMPLETE file content, not diffs or patches
 - Only include files that need to be modified or created
 - Keep explanations concise but clear
@@ -159,7 +194,7 @@ Now provide the fix:`)
 	return prompt.String()
 }
 
-func (g *GroqClient) parseFix(response string) (*Fix, error) {
+func (o *OpenAIClient) parseFix(response string) (*Fix, error) {
 	// Clean up markdown code blocks if present
 	response = strings.TrimSpace(response)
 	response = strings.TrimPrefix(response, "```json")
@@ -168,8 +203,11 @@ func (g *GroqClient) parseFix(response string) (*Fix, error) {
 	response = strings.TrimSpace(response)
 
 	var result struct {
-		Explanation string `json:"explanation"`
-		Files       []struct {
+		Confidence    string   `json:"confidence"`
+		NeedsMoreInfo bool     `json:"needs_more_info"`
+		Questions     []string `json:"questions"`
+		Explanation   string   `json:"explanation"`
+		Files         []struct {
 			Path    string `json:"path"`
 			Content string `json:"content"`
 		} `json:"files"`
@@ -180,8 +218,11 @@ func (g *GroqClient) parseFix(response string) (*Fix, error) {
 	}
 
 	fix := &Fix{
-		Explanation: result.Explanation,
-		FileChanges: make([]FileChange, len(result.Files)),
+		Confidence:    result.Confidence,
+		NeedsMoreInfo: result.NeedsMoreInfo,
+		Questions:     result.Questions,
+		Explanation:   result.Explanation,
+		FileChanges:   make([]FileChange, len(result.Files)),
 	}
 
 	for i, file := range result.Files {
@@ -192,6 +233,55 @@ func (g *GroqClient) parseFix(response string) (*Fix, error) {
 	}
 
 	return fix, nil
+}
+
+func (o *OpenAIClient) GetAvailableModels() ([]string, error) {
+	req, err := http.NewRequest("GET", o.baseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+o.apiKey)
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// Return default models if API call fails
+		return []string{
+			"gpt-4o",
+			"gpt-4o-mini",
+			"gpt-4-turbo",
+			"gpt-3.5-turbo",
+		}, nil
+	}
+
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return []string{"gpt-4o"}, nil
+	}
+
+	models := make([]string, 0)
+	for _, m := range result.Data {
+		// Only include GPT models
+		if strings.HasPrefix(m.ID, "gpt-") {
+			models = append(models, m.ID)
+		}
+	}
+
+	if len(models) == 0 {
+		return []string{"gpt-4o"}, nil
+	}
+
+	return models, nil
 }
 
 // Ollama Client (Free local AI: https://ollama.com)
@@ -262,12 +352,159 @@ func (o *OllamaClient) AnalyzeAndFix(issue Issue, context *RepoContext) (*Fix, e
 
 func (o *OllamaClient) buildPrompt(issue Issue, context *RepoContext) string {
 	// Same prompt building logic as Groq
-	g := &GroqClient{}
+	g := &OpenAIClient{}
 	return g.buildPrompt(issue, context)
 }
 
 func (o *OllamaClient) parseFix(response string) (*Fix, error) {
 	// Same parsing logic as Groq
-	g := &GroqClient{}
+	g := &OpenAIClient{}
 	return g.parseFix(response)
 }
+
+// xAI Client methods
+func (x *XAIClient) AnalyzeAndFix(issue Issue, context *RepoContext) (*Fix, error) {
+	prompt := x.buildPrompt(issue, context)
+
+	reqBody := OpenAIRequest{ // Uses same structure as Groq (OpenAI-compatible)
+		Model: x.model,
+		Messages: []OpenAIMessage{
+			{
+				Role:    "system",
+				Content: "You are an expert software developer. Analyze issues and provide fixes in a structured JSON format.",
+			},
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+		Temperature: 0.2,
+		MaxTokens:   8000,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", x.baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+x.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := x.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("xAI API error: %s - %s", resp.Status, string(body))
+	}
+
+	var xaiResp OpenAIResponse // Uses same response structure
+	if err := json.NewDecoder(resp.Body).Decode(&xaiResp); err != nil {
+		return nil, err
+	}
+
+	if len(xaiResp.Choices) == 0 {
+		return nil, fmt.Errorf("no response from AI")
+	}
+
+	return x.parseFix(xaiResp.Choices[0].Message.Content)
+}
+
+func (x *XAIClient) buildPrompt(issue Issue, context *RepoContext) string {
+	// Same prompt building logic as Groq
+	g := &OpenAIClient{}
+	return g.buildPrompt(issue, context)
+}
+
+func (x *XAIClient) parseFix(response string) (*Fix, error) {
+	// Same parsing logic as Groq
+	g := &OpenAIClient{}
+	return g.parseFix(response)
+}
+
+func (x *XAIClient) GetAvailableModels() ([]string, error) {
+	req, err := http.NewRequest("GET", x.baseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+x.apiKey)
+
+	resp, err := x.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return []string{"grok-beta", "grok-vision-beta"}, nil
+	}
+
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return []string{"grok-beta"}, nil
+	}
+
+	models := make([]string, 0, len(result.Data))
+	for _, m := range result.Data {
+		models = append(models, m.ID)
+	}
+
+	if len(models) == 0 {
+		return []string{"grok-beta"}, nil
+	}
+
+	return models, nil
+}
+
+func (o *OllamaClient) GetAvailableModels() ([]string, error) {
+	req, err := http.NewRequest("GET", o.baseURL+"/api/tags", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return []string{"llama2", "codellama", "mistral"}, nil
+	}
+
+	var result struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return []string{"llama2"}, nil
+	}
+
+	models := make([]string, 0, len(result.Models))
+	for _, m := range result.Models {
+		models = append(models, m.Name)
+	}
+
+	if len(models) == 0 {
+		return []string{"llama2"}, nil
+	}
+
+	return models, nil
+}
+

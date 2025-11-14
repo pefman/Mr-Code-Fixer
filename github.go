@@ -160,3 +160,75 @@ func (g *GitHubClient) CreatePullRequest(title, body, head, base string) (string
 
 	return pr.HTMLURL, nil
 }
+
+func (g *GitHubClient) AddIssueComment(issueNumber int, comment string) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d/comments", 
+		g.baseURL, g.owner, g.repo, issueNumber)
+	
+	reqBody := map[string]string{
+		"body": comment,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("GitHub API error adding comment: %s - %s", resp.Status, string(body))
+	}
+
+	return nil
+}
+
+func (g *GitHubClient) CloseIssue(issueNumber int) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", 
+		g.baseURL, g.owner, g.repo, issueNumber)
+	
+	reqBody := map[string]string{
+		"state": "closed",
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("PATCH", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("GitHub API error closing issue: %s - %s", resp.Status, string(body))
+	}
+
+	return nil
+}
