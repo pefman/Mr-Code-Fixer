@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+const Version = "v1.3.5"
+
 type Config struct {
 	RepoOwner    string `json:"repo_owner"`
 	RepoName     string `json:"repo_name"`
@@ -176,10 +178,6 @@ func selectIssue(issues []Issue) *Issue {
 		return nil
 	}
 
-	fmt.Println("\n╔════════════════════════════════════════════════════════════════╗")
-	fmt.Println("║                    📋 Available Issues                         ║")
-	fmt.Println("╚════════════════════════════════════════════════════════════════╝\n")
-	
 	for i, issue := range issues {
 		fmt.Printf("  \033[1;36m%d.\033[0m \033[1m#%d\033[0m - %s\n", i+1, issue.Number, issue.Title)
 		if len(issue.Body) > 80 {
@@ -208,8 +206,56 @@ func selectIssue(issues []Issue) *Issue {
 	}
 }
 
+func selectIssueWithSettings(issues []Issue, config *Config, analytics *SessionAnalytics) *Issue {
+	if len(issues) == 0 {
+		return nil
+	}
+
+	fmt.Println()
+	for i, issue := range issues {
+		fmt.Printf("  \033[1;36m%d.\033[0m \033[1m#%d\033[0m - %s\n", i+1, issue.Number, issue.Title)
+		if len(issue.Body) > 80 {
+			fmt.Printf("     \033[90m%s...\033[0m\n", issue.Body[:80])
+		} else if issue.Body != "" {
+			fmt.Printf("     \033[90m%s\033[0m\n", issue.Body)
+		}
+		fmt.Println()
+	}
+
+	for {
+		fmt.Printf("\n\033[1m→\033[0m Select issue (\033[36m1-%d\033[0m, \033[33m0\033[0m=fix all, \033[35mS\033[0m=settings, \033[90mQ\033[0m=quit) [\033[32m1\033[0m]: ", len(issues))
+		choice := strings.ToLower(strings.TrimSpace(prompt("", "1")))
+		
+		// Handle special commands
+		if choice == "s" {
+			*config = interactiveSetup()
+			fmt.Println("\n\033[32m✓\033[0m Settings updated. Please restart the application.")
+			return nil
+		}
+		
+		if choice == "q" {
+			fmt.Println("Exiting...")
+			return nil
+		}
+		
+		num, err := strconv.Atoi(choice)
+		if err != nil || num < 0 || num > len(issues) {
+			fmt.Println("\033[31m✗\033[0m Invalid selection. Please try again.")
+			continue
+		}
+
+		if num == 0 {
+			// Return a special marker for "fix all"
+			return &Issue{Number: -1}
+		}
+
+		return &issues[num-1]
+	}
+}
+
 func interactiveSetup() Config {
-	fmt.Println("=== Mr. Code Fixer - Interactive Setup ===\n")
+	fmt.Println("=== Mr. Code Fixer - Interactive Setup ===")
+	fmt.Println()
 	
 	config := loadConfig()
 
@@ -369,7 +415,15 @@ func main() {
 	var config Config
 	
 	if interactive {
-		config = interactiveSetup()
+		// Check if config exists
+		configPath := getConfigPath()
+		if _, err := os.Stat(configPath); err == nil {
+			// Config exists - just load it
+			config = loadConfig()
+		} else {
+			// No config - run full setup
+			config = interactiveSetup()
+		}
 	} else {
 		// Load saved config as defaults
 		config = loadConfig()
@@ -391,23 +445,33 @@ func main() {
 }
 
 func run(config Config) error {
+	// Show welcome banner
 	fmt.Println("\n╔════════════════════════════════════════════════════════════════╗")
-	fmt.Println("║              🤖 Mr. Code Fixer - Ready to Help!               ║")
+	fmt.Printf("║         🤖 Mr. Code Fixer - Ready to Help! %-19s║\n", Version)
 	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
-	fmt.Printf("\n📦 Repository: \033[1m%s/%s\033[0m\n", config.RepoOwner, config.RepoName)
-	fmt.Printf("🧠 AI Service: \033[1m%s\033[0m (model: \033[36m%s\033[0m)\n\n", config.AIService, config.AIModel)
+	fmt.Printf("\n📦 Repository: \033[1m%s/%s\033[0m", config.RepoOwner, config.RepoName)
+	fmt.Printf("\n🧠 AI Service: \033[1m%s\033[0m (model: \033[36m%s\033[0m)\n\n", config.AIService, config.AIModel)
+
+	// Initialize analytics
+	analytics := NewSessionAnalytics()
 
 	// Initialize GitHub client
 	ghClient := NewGitHubClient(config.GithubToken, config.RepoOwner, config.RepoName)
 
-	// Initialize AI client
+	// Initialize AI client with analytics
 	var aiClient AIClient
 	if config.AIService == "chatgpt" || config.AIService == "openai" {
-		aiClient = NewOpenAIClient(config.AIAPIKey, config.AIModel)
+		client := NewOpenAIClient(config.AIAPIKey, config.AIModel)
+		client.SetAnalytics(analytics)
+		aiClient = client
 	} else if config.AIService == "grok" {
-		aiClient = NewXAIClient(config.AIAPIKey, config.AIModel)
+		client := NewXAIClient(config.AIAPIKey, config.AIModel)
+		client.SetAnalytics(analytics)
+		aiClient = client
 	} else {
-		aiClient = NewOllamaClient(config.OllamaURL, config.AIModel)
+		client := NewOllamaClient(config.OllamaURL, config.AIModel)
+		client.SetAnalytics(analytics)
+		aiClient = client
 	}
 
 	// Fetch all open issues
@@ -418,6 +482,16 @@ func run(config Config) error {
 	fmt.Println()
 	issues, err := ghClient.GetOpenIssues(100) // Get up to 100 issues
 	if err != nil {
+		fmt.Printf("\n\033[31m✗ Error fetching issues:\033[0m %v\n\n", err)
+		
+		// Offer to review settings
+		fmt.Println("This might be due to incorrect configuration.")
+		response := prompt("Would you like to review settings? (yes/no)", "yes")
+		if strings.ToLower(response) == "yes" || strings.ToLower(response) == "y" {
+			config = interactiveSetup()
+			// Retry with new config
+			return run(config)
+		}
 		return fmt.Errorf("failed to fetch issues: %w", err)
 	}
 
@@ -427,11 +501,11 @@ func run(config Config) error {
 	}
 
 	// Filter out issues the bot has already responded to
-	fmt.Print("📝 Filtering issues")
+	fmt.Print("📝 Loading issues")
 	for i := 0; i < 3; i++ {
 		fmt.Print(".")
 	}
-	fmt.Println()
+	fmt.Println("\n")
 	
 	var unhandledIssues []Issue
 	for _, issue := range issues {
@@ -442,17 +516,25 @@ func run(config Config) error {
 			continue
 		}
 		
-		// Check if bot already responded
-		alreadyHandled := false
-		for _, comment := range comments {
+		// Check if bot's comment is the last one
+		// If there are new comments after bot's response, process the issue again
+		needsProcessing := true
+		lastBotCommentIndex := -1
+		
+		// Find the last bot comment
+		for i, comment := range comments {
 			if strings.Contains(comment.Body, "Mr. Code Fixer") || 
 			   strings.Contains(comment.Body, "🤖") {
-				alreadyHandled = true
-				break
+				lastBotCommentIndex = i
 			}
 		}
 		
-		if !alreadyHandled {
+		// If bot commented and it's still the last comment, skip
+		if lastBotCommentIndex != -1 && lastBotCommentIndex == len(comments)-1 {
+			needsProcessing = false
+		}
+		
+		if needsProcessing {
 			unhandledIssues = append(unhandledIssues, issue)
 		}
 	}
@@ -467,12 +549,21 @@ func run(config Config) error {
 			len(unhandledIssues), len(issues)-len(unhandledIssues))
 	}
 
-	// Let user select which issue(s) to fix
-	selectedIssue := selectIssue(unhandledIssues)
+	fmt.Printf("\n\033[1m📦 %s/%s\033[0m\n", config.RepoOwner, config.RepoName)
+
+	// Let user select which issue(s) to fix (with settings option)
+	selectedIssue := selectIssueWithSettings(unhandledIssues, &config, analytics)
+	
+	// If user chose settings, the config has been updated and we should restart
+	if selectedIssue == nil {
+		return nil // User chose to exit or settings were changed
+	}
 
 	var issuesToProcess []Issue
-	if selectedIssue == nil {
-		// User chose to fix all
+	if selectedIssue.Number == -1 {
+		// Special case: user chose to fix all
+		analytics.PrintCostEstimate(len(unhandledIssues), config.AIService)
+		
 		confirm := prompt(fmt.Sprintf("Fix all %d issues? (yes/no)", len(unhandledIssues)), "no")
 		if strings.ToLower(confirm) != "yes" && strings.ToLower(confirm) != "y" {
 			fmt.Println("Cancelled.")
@@ -489,12 +580,13 @@ func run(config Config) error {
 		fmt.Printf("\n\n🔧 Processing Issue #%d: \033[1m%s\033[0m\n", issue.Number, issue.Title)
 		fmt.Println(strings.Repeat("─", 66))
 		
-		if err := processIssue(config, ghClient, aiClient, issue); err != nil {
+		if err := processIssue(config, ghClient, aiClient, issue, analytics); err != nil {
 			fmt.Printf("Failed to process issue #%d: %v\n\n", issue.Number, err)
 			
 			if len(issuesToProcess) > 1 {
 				cont := prompt("Continue with next issue? (yes/no)", "yes")
 				if strings.ToLower(cont) != "yes" && strings.ToLower(cont) != "y" {
+					analytics.PrintSummary()
 					return fmt.Errorf("stopped processing issues")
 				}
 			}
@@ -504,10 +596,14 @@ func run(config Config) error {
 		fmt.Printf("✓ Successfully processed issue #%d\n", issue.Number)
 	}
 
+	// Print session summary
+	fmt.Println("\n" + strings.Repeat("═", 66))
+	analytics.PrintSummary()
+
 	return nil
 }
 
-func processIssue(config Config, ghClient *GitHubClient, aiClient AIClient, issue Issue) error {
+func processIssue(config Config, ghClient *GitHubClient, aiClient AIClient, issue Issue, analytics *SessionAnalytics) error {
 	// Check if issue is too vague before processing
 	if isIssueTooVague(issue) {
 		fmt.Println("\n⚠ Issue description is too vague to fix automatically.")
@@ -535,6 +631,7 @@ The more details you provide, the better I can help! 🙏
 			return fmt.Errorf("failed to post comment: %w", err)
 		}
 		
+		analytics.RecordQuestionAsked()
 		fmt.Printf("✓ Posted request for more information on issue #%d\n", issue.Number)
 		return nil
 	}
@@ -580,6 +677,7 @@ The more details you provide, the better I can help! 🙏
 			return fmt.Errorf("failed to post questions: %w", err)
 		}
 		
+		analytics.RecordQuestionAsked()
 		fmt.Printf("✓ Posted %d question(s) to issue #%d\n", len(fix.Questions), issue.Number)
 		return nil
 	}
@@ -602,6 +700,14 @@ This issue appears to be a question or discussion rather than a bug or feature r
 			return fmt.Errorf("failed to post response: %w", err)
 		}
 		
+		// Close the issue since we've responded
+		if err := ghClient.CloseIssue(issue.Number); err != nil {
+			fmt.Printf("Warning: Could not close issue: %v\n", err)
+		} else {
+			fmt.Printf("✓ Issue #%d closed\n", issue.Number)
+		}
+		
+		analytics.RecordIssueHandled()
 		fmt.Printf("✓ Posted response explaining no code changes needed\n")
 		return nil
 	}
@@ -619,6 +725,27 @@ This issue appears to be a question or discussion rather than a bug or feature r
 			return fmt.Errorf("failed to apply changes to %s: %w", change.FilePath, err)
 		}
 		fmt.Printf("  ✓ Modified %s\n", change.FilePath)
+	}
+
+	// Run tests if available
+	fmt.Println("\n🧪 Checking for tests...")
+	testRunner := NewTestRunner(gitOps.repoPath)
+	testResult := testRunner.Execute()
+	
+	if testResult.Command != "" {
+		fmt.Printf("Found test command: %s\n", testResult.Command)
+		
+		if !testResult.Passed {
+			fmt.Println("\n❌ Tests failed! Not creating PR.")
+			fmt.Println("Test output:")
+			fmt.Println(testResult.Output)
+			
+			// Rollback by not proceeding - cleanup will happen via defer
+			return fmt.Errorf("tests failed after applying changes")
+		}
+		fmt.Println("✓ All tests passed!")
+	} else {
+		fmt.Println("No tests detected - proceeding without test validation")
 	}
 
 	// Commit changes
@@ -649,6 +776,14 @@ This issue appears to be a question or discussion rather than a bug or feature r
 		fileChangesList += fmt.Sprintf("- `%s`\n", change.FilePath)
 	}
 	
+	// Add test results to PR body
+	testSection := ""
+	if testResult.Command != "" {
+		if testResult.Passed {
+			testSection = "\n### ✅ Tests Passed\n\nAll existing tests passed after applying the changes.\n"
+		}
+	}
+	
 	prBody := fmt.Sprintf(`## 🔧 Automated Fix
 
 Fixes #%d
@@ -667,7 +802,7 @@ This PR addresses the issue by making targeted changes to the codebase. The modi
 %s
 **Approach:**
 The fix was generated by analyzing the issue requirements and applying best practices for the detected programming language and framework. All changes maintain backward compatibility where possible and follow the existing code style.
-
+%s
 **Testing Recommendations:**
 - Verify the fix addresses the reported issue
 - Check for any unintended side effects
@@ -677,13 +812,15 @@ The fix was generated by analyzing the issue requirements and applying best prac
 ---
 
 <sub>🤖 This PR was automatically generated by [Mr. Code Fixer](https://github.com/pefman/Mr-Code-Fixer) - an AI-powered issue resolution bot</sub>`,
-		issue.Number, confidenceNote, fix.Explanation, fileChangesList)
+		issue.Number, confidenceNote, fix.Explanation, fileChangesList, testSection)
 	
 	prURL, err := ghClient.CreatePullRequest(prTitle, prBody, branchName, gitOps.DefaultBranch)
 	if err != nil {
 		return fmt.Errorf("failed to create pull request: %w", err)
 	}
 
+	analytics.RecordPRCreated()
+	analytics.RecordIssueHandled()
 	fmt.Printf("✓ Pull request created: %s\n", prURL)
 
 	// If high confidence, close the issue with a detailed comment

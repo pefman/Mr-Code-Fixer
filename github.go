@@ -19,9 +19,10 @@ type Issue struct {
 }
 
 type Comment struct {
-	ID   int    `json:"id"`
-	Body string `json:"body"`
-	User struct {
+	ID        int    `json:"id"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"created_at"`
+	User      struct {
 		Login string `json:"login"`
 	} `json:"user"`
 }

@@ -9,9 +9,21 @@ Mr. Code Fixer is an autonomous bot that:
 - 🧠 Uses AI to understand what needs to be fixed
 - 💡 Asks clarifying questions when uncertain
 - ✏️ Creates fixes and opens pull requests
+- 🧪 Runs tests before creating PRs
+- 📊 Tracks API costs and session metrics
 - ✅ Closes issues when confident about the solution
 
 Think of it as a tireless contributor that works 24/7 to help maintain your codebase.
+
+## Features
+
+- **Smart Issue Processing**: Filters out vague issues, duplicates, and PRs automatically
+- **Multi-AI Support**: Choose between ChatGPT (OpenAI), Grok (xAI), or Ollama (local)
+- **Confidence-Based Decisions**: High confidence fixes auto-close issues; uncertain ones ask questions
+- **Test Execution**: Automatically detects and runs tests (Go, Node.js, Python, Rust, Java, PHP)
+- **Cost Tracking**: Shows estimated costs before processing multiple issues
+- **Session Analytics**: Tracks API calls, costs, PRs created, and questions asked
+- **Beautiful UI**: Colored output with emojis and progress indicators
 
 ## Quick Start
 
@@ -164,9 +176,38 @@ Issue #5: "App crashes on startup"
   ↓
 Bot analyzes code + issue description
   ↓
-High confidence? 
-  ├─ Yes → Creates fix, opens PR, closes issue
-  └─ No → Posts: "Could you provide the error logs?"
+AI analyzes and creates fix
+  ↓
+Bot detects test command (e.g., "go test")
+  ↓
+Runs tests after applying changes
+  ├─ Tests pass → Creates PR, closes issue
+  └─ Tests fail → Rolls back, reports error
+```
+
+### Session Analytics
+
+After processing issues, the bot shows a summary:
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║                     📊 Session Summary                        ║
+╚══════════════════════════════════════════════════════════════╝
+
+⏱  Duration: 2m 34s
+🤖 AI Calls: 5
+💰 Estimated Cost: $0.005
+📝 Issues Handled: 3
+🔀 PRs Created: 2
+❓ Questions Asked: 1
+```
+
+When fixing multiple issues, you'll see cost estimates first:
+
+```
+💰 Estimated cost for 10 issues: ~$0.015 (15 AI calls @ $0.001 each)
+⚠️  Note: Processing multiple issues will incur API costs
+Fix all 10 issues? (yes/no) [no]:
 ```
 
 ## Advanced Usage
@@ -193,6 +234,22 @@ To use the bot with multiple repos, either:
 - Run it interactively and change the repo each time
 - Create separate config files and use: `./mr-code-fixer --config /path/to/config.json`
 - Set up separate bot instances with different working directories
+
+### Supported Test Frameworks
+
+Mr. Code Fixer automatically detects and runs tests for:
+
+| Language/Framework | Detection | Command |
+|-------------------|-----------|---------|
+| **Node.js** | package.json | `npm test` |
+| **Go** | go.mod | `go test ./...` |
+| **Python** | requirements.txt, setup.py | `python -m pytest` |
+| **Rust** | Cargo.toml | `cargo test` |
+| **Java (Maven)** | pom.xml | `mvn test` |
+| **Java (Gradle)** | build.gradle | `gradle test` |
+| **PHP** | composer.json | `php vendor/bin/phpunit` |
+
+If no tests are found, the bot proceeds without test validation and notes this in the PR.
 
 ## Building From Source
 

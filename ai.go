@@ -28,10 +28,11 @@ type Fix struct {
 
 // OpenAI/ChatGPT Client
 type OpenAIClient struct {
-	apiKey  string
-	model   string
-	baseURL string
-	client  *http.Client
+	apiKey    string
+	model     string
+	baseURL   string
+	client    *http.Client
+	analytics *SessionAnalytics
 }
 
 func NewOpenAIClient(apiKey, model string) *OpenAIClient {
@@ -46,12 +47,17 @@ func NewOpenAIClient(apiKey, model string) *OpenAIClient {
 	}
 }
 
+func (o *OpenAIClient) SetAnalytics(analytics *SessionAnalytics) {
+	o.analytics = analytics
+}
+
 // xAI Client (Grok models)
 type XAIClient struct {
-	apiKey  string
-	model   string
-	baseURL string
-	client  *http.Client
+	apiKey    string
+	model     string
+	baseURL   string
+	client    *http.Client
+	analytics *SessionAnalytics
 }
 
 func NewXAIClient(apiKey, model string) *XAIClient {
@@ -64,6 +70,10 @@ func NewXAIClient(apiKey, model string) *XAIClient {
 		baseURL: "https://api.x.ai/v1",
 		client:  &http.Client{Timeout: 120 * time.Second},
 	}
+}
+
+func (x *XAIClient) SetAnalytics(analytics *SessionAnalytics) {
+	x.analytics = analytics
 }
 
 type OpenAIRequest struct {
@@ -85,6 +95,11 @@ type OpenAIResponse struct {
 }
 
 func (o *OpenAIClient) AnalyzeAndFix(issue Issue, context *RepoContext) (*Fix, error) {
+	// Track API call
+	if o.analytics != nil {
+		o.analytics.RecordAPICall("chatgpt")
+	}
+
 	prompt := o.buildPrompt(issue, context)
 
 	reqBody := OpenAIRequest{
@@ -286,9 +301,10 @@ func (o *OpenAIClient) GetAvailableModels() ([]string, error) {
 
 // Ollama Client (Free local AI: https://ollama.com)
 type OllamaClient struct {
-	baseURL string
-	model   string
-	client  *http.Client
+	baseURL   string
+	model     string
+	client    *http.Client
+	analytics *SessionAnalytics
 }
 
 func NewOllamaClient(baseURL, model string) *OllamaClient {
@@ -297,6 +313,10 @@ func NewOllamaClient(baseURL, model string) *OllamaClient {
 		model:   model,
 		client:  &http.Client{Timeout: 300 * time.Second}, // Longer timeout for local models
 	}
+}
+
+func (o *OllamaClient) SetAnalytics(analytics *SessionAnalytics) {
+	o.analytics = analytics
 }
 
 type OllamaRequest struct {
@@ -311,6 +331,11 @@ type OllamaResponse struct {
 }
 
 func (o *OllamaClient) AnalyzeAndFix(issue Issue, context *RepoContext) (*Fix, error) {
+	// Track API call
+	if o.analytics != nil {
+		o.analytics.RecordAPICall("ollama")
+	}
+
 	prompt := o.buildPrompt(issue, context)
 
 	reqBody := OllamaRequest{
@@ -364,6 +389,11 @@ func (o *OllamaClient) parseFix(response string) (*Fix, error) {
 
 // xAI Client methods
 func (x *XAIClient) AnalyzeAndFix(issue Issue, context *RepoContext) (*Fix, error) {
+	// Track API call
+	if x.analytics != nil {
+		x.analytics.RecordAPICall("grok")
+	}
+
 	prompt := x.buildPrompt(issue, context)
 
 	reqBody := OpenAIRequest{ // Uses same structure as Groq (OpenAI-compatible)
