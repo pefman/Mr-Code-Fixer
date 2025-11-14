@@ -1,6 +1,10 @@
 # Workspace directory for cloning repos
 workspace/
 
+# Secrets
+.env
+.token
+
 # Binary output
 mr-code-fixer
 mr-code-fixer.exe

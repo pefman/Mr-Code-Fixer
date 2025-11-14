@@ -84,7 +84,7 @@ brews:
   - repository:
       owner: pefman
       name: homebrew-tap
-    folder: Formula
+    directory: Formula
     homepage: https://github.com/pefman/Mr-Code-Fixer
     description: Automated GitHub issue fixing using AI
     license: MIT
