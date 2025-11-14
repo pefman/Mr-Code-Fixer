@@ -426,18 +426,59 @@ func run(config Config) error {
 		return nil
 	}
 
+	// Filter out issues the bot has already responded to
+	fmt.Print("📝 Filtering issues")
+	for i := 0; i < 3; i++ {
+		fmt.Print(".")
+	}
+	fmt.Println()
+	
+	var unhandledIssues []Issue
+	for _, issue := range issues {
+		comments, err := ghClient.GetIssueComments(issue.Number)
+		if err != nil {
+			// If we can't check, include it to be safe
+			unhandledIssues = append(unhandledIssues, issue)
+			continue
+		}
+		
+		// Check if bot already responded
+		alreadyHandled := false
+		for _, comment := range comments {
+			if strings.Contains(comment.Body, "Mr. Code Fixer") || 
+			   strings.Contains(comment.Body, "🤖") {
+				alreadyHandled = true
+				break
+			}
+		}
+		
+		if !alreadyHandled {
+			unhandledIssues = append(unhandledIssues, issue)
+		}
+	}
+	
+	if len(unhandledIssues) == 0 {
+		fmt.Println("\n✓ All open issues have already been handled by the bot!")
+		return nil
+	}
+	
+	if len(issues) != len(unhandledIssues) {
+		fmt.Printf("✓ Found %d new issue(s) (skipped %d already handled)\n", 
+			len(unhandledIssues), len(issues)-len(unhandledIssues))
+	}
+
 	// Let user select which issue(s) to fix
-	selectedIssue := selectIssue(issues)
+	selectedIssue := selectIssue(unhandledIssues)
 
 	var issuesToProcess []Issue
 	if selectedIssue == nil {
 		// User chose to fix all
-		confirm := prompt(fmt.Sprintf("Fix all %d issues? (yes/no)", len(issues)), "no")
+		confirm := prompt(fmt.Sprintf("Fix all %d issues? (yes/no)", len(unhandledIssues)), "no")
 		if strings.ToLower(confirm) != "yes" && strings.ToLower(confirm) != "y" {
 			fmt.Println("Cancelled.")
 			return nil
 		}
-		issuesToProcess = issues
+		issuesToProcess = unhandledIssues
 	} else {
 		issuesToProcess = []Issue{*selectedIssue}
 	}
@@ -467,6 +508,37 @@ func run(config Config) error {
 }
 
 func processIssue(config Config, ghClient *GitHubClient, aiClient AIClient, issue Issue) error {
+	// Check if issue is too vague before processing
+	if isIssueTooVague(issue) {
+		fmt.Println("\n⚠ Issue description is too vague to fix automatically.")
+		fmt.Println("Posting request for more details...")
+		
+		questionComment := `## ❓ Need More Information
+
+Hi! I'd love to help fix this issue, but I need more details to understand what's wrong.
+
+Please provide:
+
+1. **What's the expected behavior?** What should happen?
+2. **What's the actual behavior?** What's currently happening instead?
+3. **Steps to reproduce:** How can I see this problem?
+4. **Any error messages?** Copy-paste any errors from console/logs
+5. **Which file(s) are affected?** (e.g., src/main.js or components/Login.tsx)
+
+The more details you provide, the better I can help! 🙏
+
+---
+
+<sub>🤖 Mr. Code Fixer - I need clear information to create good fixes</sub>`
+		
+		if err := ghClient.AddIssueComment(issue.Number, questionComment); err != nil {
+			return fmt.Errorf("failed to post comment: %w", err)
+		}
+		
+		fmt.Printf("✓ Posted request for more information on issue #%d\n", issue.Number)
+		return nil
+	}
+
 	// Clone repository
 	gitOps, err := NewGitOps(config.WorkDir, config.RepoOwner, config.RepoName, config.GithubToken)
 	if err != nil {
@@ -512,8 +584,26 @@ func processIssue(config Config, ghClient *GitHubClient, aiClient AIClient, issu
 		return nil
 	}
 
+	// Check if AI determined this is not a code fix (e.g., question, discussion, etc.)
 	if len(fix.FileChanges) == 0 {
-		return fmt.Errorf("AI did not suggest any file changes")
+		fmt.Println("\n💬 This issue doesn't require code changes.")
+		
+		responseComment := fmt.Sprintf(`## 💬 Response
+
+%s
+
+This issue appears to be a question or discussion rather than a bug or feature requiring code changes. If you need specific code modifications, please provide more details about what changes you'd like to see.
+
+---
+
+<sub>🤖 Mr. Code Fixer</sub>`, fix.Explanation)
+		
+		if err := ghClient.AddIssueComment(issue.Number, responseComment); err != nil {
+			return fmt.Errorf("failed to post response: %w", err)
+		}
+		
+		fmt.Printf("✓ Posted response explaining no code changes needed\n")
+		return nil
 	}
 
 	// Create a branch with sanitized issue title
@@ -664,4 +754,49 @@ func createBranchName(issue Issue) string {
 	}
 	
 	return fmt.Sprintf("fix/%d-%s", issue.Number, title)
+}
+
+// isIssueTooVague checks if an issue lacks sufficient detail to fix
+func isIssueTooVague(issue Issue) bool {
+	combined := strings.ToLower(issue.Title + " " + issue.Body)
+	
+	// Vague phrases that indicate lack of detail
+	vaguePhrases := []string{
+		"something is wrong",
+		"something broken",
+		"doesn't work",
+		"not working",
+		"broken",
+		"fix this",
+		"fix it",
+		"help",
+		"issue",
+		"problem",
+	}
+	
+	// If title is very short and vague
+	if len(issue.Title) < 20 {
+		for _, phrase := range vaguePhrases {
+			if strings.Contains(combined, phrase) {
+				// Check if there's substantial detail in body
+				if len(issue.Body) < 50 { // Less than 50 chars in body
+					return true
+				}
+			}
+		}
+	}
+	
+	// If no file mentions and very short description
+	hasFileMention := strings.Contains(combined, "/") || 
+					 strings.Contains(combined, ".js") ||
+					 strings.Contains(combined, ".py") ||
+					 strings.Contains(combined, ".go") ||
+					 strings.Contains(combined, ".php") ||
+					 strings.Contains(combined, ".java")
+	
+	if !hasFileMention && len(combined) < 30 {
+		return true
+	}
+	
+	return false
 }

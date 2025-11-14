@@ -10,11 +10,20 @@ import (
 )
 
 type Issue struct {
-	Number int    `json:"number"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
-	State  string `json:"state"`
-	HTMLURL string `json:"html_url"`
+	Number      int                    `json:"number"`
+	Title       string                 `json:"title"`
+	Body        string                 `json:"body"`
+	State       string                 `json:"state"`
+	HTMLURL     string                 `json:"html_url"`
+	PullRequest map[string]interface{} `json:"pull_request,omitempty"` // Present if it's a PR
+}
+
+type Comment struct {
+	ID   int    `json:"id"`
+	Body string `json:"body"`
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
 }
 
 type GitHubClient struct {
@@ -66,9 +75,10 @@ func (g *GitHubClient) GetOpenIssues(maxIssues int) ([]Issue, error) {
 	// Filter out pull requests (they appear in issues endpoint too)
 	var filteredIssues []Issue
 	for _, issue := range issues {
-		// Pull requests have a "pull_request" field, but we're not including it in our struct
-		// so we can't filter them out easily. For now, we'll just return all issues.
-		filteredIssues = append(filteredIssues, issue)
+		// Pull requests have a "pull_request" field in the API response
+		if issue.PullRequest == nil {
+			filteredIssues = append(filteredIssues, issue)
+		}
 	}
 
 	return filteredIssues, nil
@@ -195,6 +205,37 @@ func (g *GitHubClient) AddIssueComment(issueNumber int, comment string) error {
 	}
 
 	return nil
+}
+
+func (g *GitHubClient) GetIssueComments(issueNumber int) ([]Comment, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d/comments", 
+		g.baseURL, g.owner, g.repo, issueNumber)
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("GitHub API error fetching comments: %s - %s", resp.Status, string(body))
+	}
+
+	var comments []Comment
+	if err := json.NewDecoder(resp.Body).Decode(&comments); err != nil {
+		return nil, err
+	}
+
+	return comments, nil
 }
 
 func (g *GitHubClient) CloseIssue(issueNumber int) error {
